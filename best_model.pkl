@@ -1,0 +1,57 @@
+# train_and_save_model.py
+
+import pandas as pd
+import numpy as np
+from sklearn.datasets import fetch_california_housing
+from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error
+import joblib
+
+# Step 1: Load Dataset
+housing = fetch_california_housing(as_frame=True).frame
+
+# Step 2: Create income categories for stratified sampling
+housing["income_cat"] = pd.cut(housing["MedInc"],
+                               bins=[0., 1.5, 3.0, 4.5, 6., np.inf],
+                               labels=[1, 2, 3, 4, 5])
+
+# Step 3: Stratified sampling
+split = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+for train_index, test_index in split.split(housing, housing["income_cat"]):
+    strat_train_set = housing.loc[train_index].copy()
+    strat_test_set = housing.loc[test_index].copy()
+
+# Step 4: Drop the income_cat
+for set_ in (strat_train_set, strat_test_set):
+    set_.drop("income_cat", axis=1, inplace=True)
+
+# Step 5: Feature Engineering
+for set_ in (strat_train_set, strat_test_set):
+    set_["rooms_per_household"] = set_["AveRooms"] / set_["Households"]
+    set_["bedrooms_per_room"] = set_["AveBedrms"] / set_["AveRooms"]
+    set_["population_per_household"] = set_["Population"] / set_["Households"]
+
+# Step 6: Separate features and labels
+housing_features = strat_train_set.drop("MedHouseVal", axis=1)
+housing_labels = strat_train_set["MedHouseVal"]
+
+# Step 7: Create preprocessing pipeline
+pipeline = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")),
+    ("scaler", StandardScaler())
+])
+housing_prepared = pipeline.fit_transform(housing_features)
+
+# Step 8: Train the model (Random Forest)
+model = RandomForestRegressor(n_estimators=100, random_state=42)
+model.fit(housing_prepared, housing_labels)
+
+# Step 9: Save model and pipeline
+joblib.dump(model, "best_model.pkl")
+joblib.dump(pipeline, "preprocessing_pipeline.pkl")
+
+print("Model and pipeline saved successfully.")
